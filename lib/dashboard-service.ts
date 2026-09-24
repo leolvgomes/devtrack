@@ -1,4 +1,11 @@
-import type { Course, Project, Technology, WeeklyGoal } from "@/lib/dashboard-types";
+import type {
+  Course,
+  GithubApiResponse,
+  GithubSnapshot,
+  Project,
+  Technology,
+  WeeklyGoal,
+} from "@/lib/dashboard-types";
 import { supabase } from "@/lib/supabase";
 
 function requireSupabase() {
@@ -189,4 +196,88 @@ export async function deleteWeeklyGoal(id: string) {
   const client = requireSupabase();
   const { error } = await client.from("weekly_goals").delete().eq("id", id);
   ensureNoError(error);
+}
+
+type GithubSnapshotRow = {
+  id: string;
+  username: string;
+  display_name: string;
+  profile_url: string;
+  repositories: number;
+  pull_requests: number;
+  issues_closed: number;
+  commits_this_month: number;
+  current_streak: number;
+  weekly_commits: GithubApiResponse["weeklyCommits"];
+  synced_at: string;
+};
+
+export async function getGithubSnapshot(userId: string) {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from("github_snapshots")
+    .select(
+      "id, username, display_name, profile_url, repositories, pull_requests, issues_closed, commits_this_month, current_streak, weekly_commits, synced_at",
+    )
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  ensureNoError(error);
+
+  if (!data) {
+    return null;
+  }
+
+  return mapGithubSnapshot(data as GithubSnapshotRow);
+}
+
+export async function saveGithubSnapshot(
+  userId: string,
+  snapshot: GithubApiResponse,
+) {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from("github_snapshots")
+    .upsert(
+      {
+        user_id: userId,
+        username: snapshot.username,
+        display_name: snapshot.displayName,
+        profile_url: snapshot.profileUrl,
+        repositories: snapshot.repositories,
+        pull_requests: snapshot.pullRequests,
+        issues_closed: snapshot.issuesClosed,
+        commits_this_month: snapshot.commitsThisMonth,
+        current_streak: snapshot.currentStreak,
+        weekly_commits: snapshot.weeklyCommits,
+        synced_at: snapshot.syncedAt,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id" },
+    )
+    .select(
+      "id, username, display_name, profile_url, repositories, pull_requests, issues_closed, commits_this_month, current_streak, weekly_commits, synced_at",
+    )
+    .single();
+
+  ensureNoError(error);
+  return mapGithubSnapshot(
+    ensureRecord(data as GithubSnapshotRow | null, "Nao foi possivel salvar o GitHub."),
+  );
+}
+
+function mapGithubSnapshot(row: GithubSnapshotRow): GithubSnapshot {
+  return {
+    id: row.id,
+    username: row.username,
+    displayName: row.display_name,
+    profileUrl: row.profile_url,
+    repositories: row.repositories,
+    pullRequests: row.pull_requests,
+    issuesClosed: row.issues_closed,
+    commitsThisMonth: row.commits_this_month,
+    currentStreak: row.current_streak,
+    weeklyCommits: row.weekly_commits,
+    syncedAt: row.synced_at,
+  };
 }

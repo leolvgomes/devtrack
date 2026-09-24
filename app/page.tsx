@@ -16,6 +16,7 @@ import {
 import {
   BookOpen,
   Code2,
+  Database,
   Flame,
   GitBranch,
   GraduationCap,
@@ -50,10 +51,12 @@ import {
   deleteProject,
   deleteTechnology,
   deleteWeeklyGoal,
+  getGithubSnapshot,
   listCourses,
   listProjects,
   listTechnologies,
   listWeeklyGoals,
+  saveGithubSnapshot,
   updateCourse,
   updateProject,
   updateTechnology,
@@ -87,6 +90,7 @@ export default function Home() {
   const [githubStatus, setGithubStatus] = useState(
     "Pronto para sincronizar dados publicos.",
   );
+  const [isGithubPersisted, setIsGithubPersisted] = useState(false);
   const [isGithubLoading, setIsGithubLoading] = useState(false);
   const [dbTechnologies, setDbTechnologies] = useState<Technology[]>([]);
   const [techName, setTechName] = useState("");
@@ -142,6 +146,11 @@ export default function Home() {
   const previousEvolutionScore =
     evolutionData[evolutionData.length - 2]?.score ?? currentEvolutionScore;
   const evolutionDelta = currentEvolutionScore - previousEvolutionScore;
+  const githubPersistenceLabel = isGithubPersisted
+    ? "Salvo no Supabase"
+    : user
+      ? "Aguardando primeiro salvamento"
+      : "Sessao local";
 
   const stats = [
     {
@@ -199,6 +208,7 @@ export default function Home() {
       loadCourses(user.id);
       loadProjects(user.id);
       loadWeeklyGoals(user.id);
+      loadGithubSnapshot(user.id);
     }
   }, [user]);
 
@@ -237,6 +247,42 @@ export default function Home() {
       setGoalMessage(error instanceof Error ? error.message : "Erro ao carregar.");
     } finally {
       setIsGoalLoading(false);
+    }
+  }
+
+  async function loadGithubSnapshot(userId: string) {
+    setGithubStatus("Carregando ultimo snapshot do GitHub...");
+
+    try {
+      const snapshot = await getGithubSnapshot(userId);
+
+      if (!snapshot) {
+        setIsGithubPersisted(false);
+        setGithubStatus("Nenhum snapshot salvo. Busque um usuario do GitHub.");
+        return;
+      }
+
+      setGithubData(snapshot);
+      setGithubProfile(snapshot);
+      setGithubUsername(snapshot.username);
+      setIsGithubPersisted(true);
+      setGithubStatus(
+        `Ultimo snapshot carregado: ${new Date(snapshot.syncedAt).toLocaleString(
+          "pt-BR",
+          {
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            month: "2-digit",
+          },
+        )}.`,
+      );
+    } catch (error) {
+      setGithubStatus(
+        error instanceof Error
+          ? error.message
+          : "Nao foi possivel carregar o GitHub salvo.",
+      );
     }
   }
 
@@ -319,6 +365,9 @@ export default function Home() {
     setDbCourses([]);
     setDbProjects([]);
     setDbWeeklyGoals([]);
+    setGithubData(githubStats);
+    setGithubProfile(null);
+    setIsGithubPersisted(false);
     setAuthMessage("Sessao encerrada.");
   }
 
@@ -343,12 +392,20 @@ export default function Home() {
         throw new Error(data.error ?? "Erro ao sincronizar GitHub.");
       }
 
-      setGithubData(data);
-      setGithubProfile(data);
-      setGithubUsername(data.username);
+      const githubSnapshot = data as GithubApiResponse;
+      const savedSnapshot = user
+        ? await saveGithubSnapshot(user.id, githubSnapshot)
+        : githubSnapshot;
+
+      setGithubData(savedSnapshot);
+      setGithubProfile(savedSnapshot);
+      setGithubUsername(savedSnapshot.username);
+      setIsGithubPersisted(Boolean(user));
       setGithubStatus(
-        `Sincronizado com ${data.displayName} em ${new Date(
-          data.syncedAt,
+        `${user ? "Salvo no Supabase" : "Sincronizado"} com ${
+          savedSnapshot.displayName
+        } em ${new Date(
+          savedSnapshot.syncedAt,
         ).toLocaleTimeString("pt-BR", {
           hour: "2-digit",
           minute: "2-digit",
@@ -828,21 +885,47 @@ export default function Home() {
 
           <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-5">
-              <h2 className="text-lg font-semibold text-slate-950">
-                Atividade GitHub
-              </h2>
-              <p className="text-sm text-slate-500">
-                Dados publicos sincronizados pela API do GitHub.
-              </p>
-              {githubProfile ? (
-                <a
-                  href={githubProfile.profileUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-2 inline-flex text-sm font-medium text-blue-700 hover:text-blue-800"
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-950">
+                    Atividade GitHub
+                  </h2>
+                  <p className="text-sm text-slate-500">
+                    Dados publicos sincronizados pela API do GitHub.
+                  </p>
+                </div>
+                <span
+                  className={clsx(
+                    "inline-flex w-fit items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium",
+                    isGithubPersisted
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-slate-100 text-slate-600",
+                  )}
                 >
-                  @{githubProfile.username}
-                </a>
+                  <Database size={14} aria-hidden="true" />
+                  {githubPersistenceLabel}
+                </span>
+              </div>
+              {githubProfile ? (
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                  <a
+                    href={githubProfile.profileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-medium text-blue-700 hover:text-blue-800"
+                  >
+                    @{githubProfile.username}
+                  </a>
+                  <span className="text-slate-500">
+                    Atualizado em{" "}
+                    {new Date(githubProfile.syncedAt).toLocaleString("pt-BR", {
+                      day: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      month: "2-digit",
+                    })}
+                  </span>
+                </div>
               ) : null}
             </div>
             <div className="mb-4 flex flex-col gap-2 sm:flex-row">
@@ -901,8 +984,8 @@ export default function Home() {
                 onSubmit={handleAddTechnology}
                 className="mb-4 rounded-md border border-slate-200 bg-slate-50 p-3"
               >
-                <div className="grid gap-3 sm:grid-cols-[1fr_96px_96px_auto]">
-                  <label className="block">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block min-w-0 sm:col-span-2">
                     <span className="mb-1 block text-xs font-medium text-slate-500">
                       Tecnologia
                     </span>
@@ -913,7 +996,7 @@ export default function Home() {
                       placeholder="Ex: React"
                     />
                   </label>
-                  <label className="block">
+                  <label className="block min-w-0">
                     <span className="mb-1 block text-xs font-medium text-slate-500">
                       Progresso
                     </span>
@@ -928,7 +1011,7 @@ export default function Home() {
                       className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
                     />
                   </label>
-                  <label className="block">
+                  <label className="block min-w-0">
                     <span className="mb-1 block text-xs font-medium text-slate-500">
                       Horas
                     </span>
@@ -943,7 +1026,7 @@ export default function Home() {
                   <button
                     type="submit"
                     disabled={isTechLoading}
-                    className="inline-flex h-10 self-end items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex h-10 w-full items-center justify-center gap-2 whitespace-nowrap rounded-md bg-slate-950 px-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:col-span-2"
                   >
                     <Plus size={16} aria-hidden="true" />
                     Adicionar
@@ -1026,7 +1109,7 @@ export default function Home() {
                 className="mb-4 rounded-md border border-slate-200 bg-slate-50 p-3"
               >
                 <div className="grid gap-3">
-                  <label className="block">
+                  <label className="block min-w-0">
                     <span className="mb-1 block text-xs font-medium text-slate-500">
                       Curso
                     </span>
@@ -1037,8 +1120,8 @@ export default function Home() {
                       placeholder="Ex: Next.js completo"
                     />
                   </label>
-                  <div className="grid gap-3 sm:grid-cols-[1fr_140px_96px]">
-                    <label className="block">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block min-w-0">
                       <span className="mb-1 block text-xs font-medium text-slate-500">
                         Plataforma
                       </span>
@@ -1051,7 +1134,7 @@ export default function Home() {
                         placeholder="Ex: Alura"
                       />
                     </label>
-                    <label className="block">
+                    <label className="block min-w-0">
                       <span className="mb-1 block text-xs font-medium text-slate-500">
                         Status
                       </span>
@@ -1065,7 +1148,7 @@ export default function Home() {
                         <option>Pausado</option>
                       </select>
                     </label>
-                    <label className="block">
+                    <label className="block min-w-0 sm:col-span-2">
                       <span className="mb-1 block text-xs font-medium text-slate-500">
                         Progresso
                       </span>
@@ -1084,7 +1167,7 @@ export default function Home() {
                   <button
                     type="submit"
                     disabled={isCourseLoading}
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex h-10 w-full items-center justify-center gap-2 whitespace-nowrap rounded-md bg-slate-950 px-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <Plus size={16} aria-hidden="true" />
                     Adicionar curso
@@ -1179,7 +1262,7 @@ export default function Home() {
                 className="mb-4 rounded-md border border-slate-200 bg-slate-50 p-3"
               >
                 <div className="grid gap-3">
-                  <label className="block">
+                  <label className="block min-w-0">
                     <span className="mb-1 block text-xs font-medium text-slate-500">
                       Meta
                     </span>
@@ -1190,8 +1273,8 @@ export default function Home() {
                       placeholder="Ex: estudar 5 horas"
                     />
                   </label>
-                  <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-                    <label className="block">
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_144px]">
+                    <label className="block min-w-0">
                       <span className="mb-1 block text-xs font-medium text-slate-500">
                         Area
                       </span>
@@ -1205,7 +1288,7 @@ export default function Home() {
                     <button
                       type="submit"
                       disabled={isGoalLoading}
-                      className="inline-flex h-10 self-end items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex h-10 w-full self-end items-center justify-center gap-2 whitespace-nowrap rounded-md bg-slate-950 px-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <Plus size={16} aria-hidden="true" />
                       Adicionar
@@ -1281,8 +1364,8 @@ export default function Home() {
               onSubmit={handleAddProject}
               className="mb-5 rounded-md border border-slate-200 bg-slate-50 p-3"
             >
-              <div className="grid gap-3 lg:grid-cols-[1fr_1.4fr_160px_1fr_auto]">
-                <label className="block">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1.35fr_180px_1fr_146px]">
+                <label className="block min-w-0">
                   <span className="mb-1 block text-xs font-medium text-slate-500">
                     Projeto
                   </span>
@@ -1293,7 +1376,7 @@ export default function Home() {
                     placeholder="Ex: DevTrack"
                   />
                 </label>
-                <label className="block">
+                <label className="block min-w-0">
                   <span className="mb-1 block text-xs font-medium text-slate-500">
                     Descricao
                   </span>
@@ -1306,7 +1389,7 @@ export default function Home() {
                     placeholder="Resumo curto do projeto"
                   />
                 </label>
-                <label className="block">
+                <label className="block min-w-0">
                   <span className="mb-1 block text-xs font-medium text-slate-500">
                     Status
                   </span>
@@ -1320,7 +1403,7 @@ export default function Home() {
                     <option>Pausado</option>
                   </select>
                 </label>
-                <label className="block">
+                <label className="block min-w-0">
                   <span className="mb-1 block text-xs font-medium text-slate-500">
                     Stack
                   </span>
@@ -1334,7 +1417,7 @@ export default function Home() {
                 <button
                   type="submit"
                   disabled={isProjectLoading}
-                  className="inline-flex h-10 self-end items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex h-10 w-full self-end items-center justify-center gap-2 whitespace-nowrap rounded-md bg-slate-950 px-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 md:col-span-2 xl:col-span-1"
                 >
                   <Plus size={16} aria-hidden="true" />
                   Adicionar

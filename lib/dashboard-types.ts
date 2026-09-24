@@ -9,6 +9,10 @@ export type GithubApiResponse = GithubDashboardStats & {
   username: string;
 };
 
+export type GithubSnapshot = GithubApiResponse & {
+  id?: string;
+};
+
 export type Technology = {
   id?: string;
   name: string;
