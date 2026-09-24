@@ -53,6 +53,29 @@ type Technology = {
   color: string;
 };
 
+type Course = {
+  id?: string;
+  title: string;
+  provider: string | null;
+  status: string;
+  progress: number;
+};
+
+type Project = {
+  id?: string;
+  name: string;
+  description: string | null;
+  status: string;
+  stack: string[];
+};
+
+type WeeklyGoal = {
+  id?: string;
+  title: string;
+  area: string | null;
+  done: boolean;
+};
+
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [email, setEmail] = useState("");
@@ -76,8 +99,32 @@ export default function Home() {
   const [techHours, setTechHours] = useState(1);
   const [techMessage, setTechMessage] = useState("");
   const [isTechLoading, setIsTechLoading] = useState(false);
+  const [dbCourses, setDbCourses] = useState<Course[]>([]);
+  const [courseTitle, setCourseTitle] = useState("");
+  const [courseProvider, setCourseProvider] = useState("");
+  const [courseStatus, setCourseStatus] = useState("Em andamento");
+  const [courseProgress, setCourseProgress] = useState(50);
+  const [courseMessage, setCourseMessage] = useState("");
+  const [isCourseLoading, setIsCourseLoading] = useState(false);
+  const [dbProjects, setDbProjects] = useState<Project[]>([]);
+  const [projectName, setProjectName] = useState("");
+  const [projectDescription, setProjectDescription] = useState("");
+  const [projectStatus, setProjectStatus] = useState("Em construcao");
+  const [projectStack, setProjectStack] = useState("");
+  const [projectMessage, setProjectMessage] = useState("");
+  const [isProjectLoading, setIsProjectLoading] = useState(false);
+  const [dbWeeklyGoals, setDbWeeklyGoals] = useState<WeeklyGoal[]>([]);
+  const [goalTitle, setGoalTitle] = useState("");
+  const [goalArea, setGoalArea] = useState("");
+  const [goalMessage, setGoalMessage] = useState("");
+  const [isGoalLoading, setIsGoalLoading] = useState(false);
 
-  const displayedTechnologies: Technology[] = user ? dbTechnologies : technologies;
+  const displayedTechnologies: Technology[] = user
+    ? dbTechnologies
+    : technologies;
+  const displayedCourses: Course[] = user ? dbCourses : courses;
+  const displayedProjects: Project[] = user ? dbProjects : projects;
+  const displayedWeeklyGoals: WeeklyGoal[] = user ? dbWeeklyGoals : weeklyGoals;
 
   const stats = [
     {
@@ -89,15 +136,16 @@ export default function Home() {
     },
     {
       label: "Cursos ativos",
-      value: courses.filter((course) => course.status !== "Concluido").length,
-      detail: "2 quase finalizando",
+      value: displayedCourses.filter((course) => course.status !== "Concluido")
+        .length,
+      detail: user ? "salvos no Supabase" : "exemplos locais",
       icon: GraduationCap,
       tone: "bg-sky-100 text-sky-700",
     },
     {
       label: "Projetos",
-      value: projects.length,
-      detail: "1 pronto para deploy",
+      value: displayedProjects.length,
+      detail: user ? "salvos no Supabase" : "exemplos locais",
       icon: Rocket,
       tone: "bg-amber-100 text-amber-700",
     },
@@ -131,6 +179,9 @@ export default function Home() {
   useEffect(() => {
     if (user) {
       loadTechnologies(user.id);
+      loadCourses(user.id);
+      loadProjects(user.id);
+      loadWeeklyGoals(user.id);
     }
   }, [user]);
 
@@ -160,6 +211,93 @@ export default function Home() {
       data?.length
         ? "Tecnologias carregadas do Supabase."
         : "Nenhuma tecnologia cadastrada ainda.",
+    );
+  }
+
+  async function loadWeeklyGoals(userId: string) {
+    if (!supabase) {
+      return;
+    }
+
+    setIsGoalLoading(true);
+    setGoalMessage("Carregando metas...");
+
+    const { data, error } = await supabase
+      .from("weekly_goals")
+      .select("id, title, area, done")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    setIsGoalLoading(false);
+
+    if (error) {
+      setGoalMessage(error.message);
+      return;
+    }
+
+    setDbWeeklyGoals(data ?? []);
+    setGoalMessage(
+      data?.length
+        ? "Metas carregadas do Supabase."
+        : "Nenhuma meta cadastrada ainda.",
+    );
+  }
+
+  async function loadProjects(userId: string) {
+    if (!supabase) {
+      return;
+    }
+
+    setIsProjectLoading(true);
+    setProjectMessage("Carregando projetos...");
+
+    const { data, error } = await supabase
+      .from("projects")
+      .select("id, name, description, status, stack")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    setIsProjectLoading(false);
+
+    if (error) {
+      setProjectMessage(error.message);
+      return;
+    }
+
+    setDbProjects(data ?? []);
+    setProjectMessage(
+      data?.length
+        ? "Projetos carregados do Supabase."
+        : "Nenhum projeto cadastrado ainda.",
+    );
+  }
+
+  async function loadCourses(userId: string) {
+    if (!supabase) {
+      return;
+    }
+
+    setIsCourseLoading(true);
+    setCourseMessage("Carregando cursos...");
+
+    const { data, error } = await supabase
+      .from("courses")
+      .select("id, title, provider, status, progress")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    setIsCourseLoading(false);
+
+    if (error) {
+      setCourseMessage(error.message);
+      return;
+    }
+
+    setDbCourses(data ?? []);
+    setCourseMessage(
+      data?.length
+        ? "Cursos carregados do Supabase."
+        : "Nenhum curso cadastrado ainda.",
     );
   }
 
@@ -201,6 +339,9 @@ export default function Home() {
 
     await supabase.auth.signOut();
     setDbTechnologies([]);
+    setDbCourses([]);
+    setDbProjects([]);
+    setDbWeeklyGoals([]);
     setAuthMessage("Sessao encerrada.");
   }
 
@@ -335,6 +476,274 @@ export default function Home() {
     setTechMessage("Tecnologia removida.");
   }
 
+  async function handleAddCourse(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!supabase || !user) {
+      setCourseMessage("Faca login para cadastrar cursos.");
+      return;
+    }
+
+    const title = courseTitle.trim();
+
+    if (!title) {
+      setCourseMessage("Informe o nome do curso.");
+      return;
+    }
+
+    setIsCourseLoading(true);
+    setCourseMessage("Salvando curso...");
+
+    const { data, error } = await supabase
+      .from("courses")
+      .insert({
+        user_id: user.id,
+        title,
+        provider: courseProvider.trim() || null,
+        status: courseStatus,
+        progress: courseProgress,
+      })
+      .select("id, title, provider, status, progress")
+      .single();
+
+    setIsCourseLoading(false);
+
+    if (error) {
+      setCourseMessage(error.message);
+      return;
+    }
+
+    setDbCourses((current) => [data, ...current]);
+    setCourseTitle("");
+    setCourseProvider("");
+    setCourseStatus("Em andamento");
+    setCourseProgress(50);
+    setCourseMessage(`${data.title} cadastrado com sucesso.`);
+  }
+
+  async function handleUpdateCourse(
+    id: string | undefined,
+    updates: Partial<Pick<Course, "progress" | "status">>,
+  ) {
+    if (!supabase || !id) {
+      return;
+    }
+
+    setDbCourses((current) =>
+      current.map((course) =>
+        course.id === id ? { ...course, ...updates } : course,
+      ),
+    );
+
+    const { error } = await supabase.from("courses").update(updates).eq("id", id);
+
+    if (error) {
+      setCourseMessage(error.message);
+      if (user) {
+        loadCourses(user.id);
+      }
+      return;
+    }
+
+    setCourseMessage("Curso atualizado.");
+  }
+
+  async function handleDeleteCourse(id: string | undefined) {
+    if (!supabase || !id) {
+      return;
+    }
+
+    const previous = dbCourses;
+    setDbCourses((current) => current.filter((course) => course.id !== id));
+
+    const { error } = await supabase.from("courses").delete().eq("id", id);
+
+    if (error) {
+      setDbCourses(previous);
+      setCourseMessage(error.message);
+      return;
+    }
+
+    setCourseMessage("Curso removido.");
+  }
+
+  async function handleAddProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!supabase || !user) {
+      setProjectMessage("Faca login para cadastrar projetos.");
+      return;
+    }
+
+    const name = projectName.trim();
+
+    if (!name) {
+      setProjectMessage("Informe o nome do projeto.");
+      return;
+    }
+
+    setIsProjectLoading(true);
+    setProjectMessage("Salvando projeto...");
+
+    const { data, error } = await supabase
+      .from("projects")
+      .insert({
+        user_id: user.id,
+        name,
+        description: projectDescription.trim() || null,
+        status: projectStatus,
+        stack: parseStack(projectStack),
+      })
+      .select("id, name, description, status, stack")
+      .single();
+
+    setIsProjectLoading(false);
+
+    if (error) {
+      setProjectMessage(error.message);
+      return;
+    }
+
+    setDbProjects((current) => [data, ...current]);
+    setProjectName("");
+    setProjectDescription("");
+    setProjectStatus("Em construcao");
+    setProjectStack("");
+    setProjectMessage(`${data.name} cadastrado com sucesso.`);
+  }
+
+  async function handleUpdateProject(
+    id: string | undefined,
+    updates: Partial<Pick<Project, "status">>,
+  ) {
+    if (!supabase || !id) {
+      return;
+    }
+
+    setDbProjects((current) =>
+      current.map((project) =>
+        project.id === id ? { ...project, ...updates } : project,
+      ),
+    );
+
+    const { error } = await supabase.from("projects").update(updates).eq("id", id);
+
+    if (error) {
+      setProjectMessage(error.message);
+      if (user) {
+        loadProjects(user.id);
+      }
+      return;
+    }
+
+    setProjectMessage("Projeto atualizado.");
+  }
+
+  async function handleDeleteProject(id: string | undefined) {
+    if (!supabase || !id) {
+      return;
+    }
+
+    const previous = dbProjects;
+    setDbProjects((current) => current.filter((project) => project.id !== id));
+
+    const { error } = await supabase.from("projects").delete().eq("id", id);
+
+    if (error) {
+      setDbProjects(previous);
+      setProjectMessage(error.message);
+      return;
+    }
+
+    setProjectMessage("Projeto removido.");
+  }
+
+  async function handleAddGoal(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!supabase || !user) {
+      setGoalMessage("Faca login para cadastrar metas.");
+      return;
+    }
+
+    const title = goalTitle.trim();
+
+    if (!title) {
+      setGoalMessage("Informe a meta semanal.");
+      return;
+    }
+
+    setIsGoalLoading(true);
+    setGoalMessage("Salvando meta...");
+
+    const { data, error } = await supabase
+      .from("weekly_goals")
+      .insert({
+        user_id: user.id,
+        title,
+        area: goalArea.trim() || null,
+        done: false,
+      })
+      .select("id, title, area, done")
+      .single();
+
+    setIsGoalLoading(false);
+
+    if (error) {
+      setGoalMessage(error.message);
+      return;
+    }
+
+    setDbWeeklyGoals((current) => [data, ...current]);
+    setGoalTitle("");
+    setGoalArea("");
+    setGoalMessage(`${data.title} cadastrada com sucesso.`);
+  }
+
+  async function handleToggleGoal(id: string | undefined, done: boolean) {
+    if (!supabase || !id) {
+      return;
+    }
+
+    setDbWeeklyGoals((current) =>
+      current.map((goal) => (goal.id === id ? { ...goal, done } : goal)),
+    );
+
+    const { error } = await supabase
+      .from("weekly_goals")
+      .update({ done })
+      .eq("id", id);
+
+    if (error) {
+      setGoalMessage(error.message);
+      if (user) {
+        loadWeeklyGoals(user.id);
+      }
+      return;
+    }
+
+    setGoalMessage(done ? "Meta concluida." : "Meta reaberta.");
+  }
+
+  async function handleDeleteGoal(id: string | undefined) {
+    if (!supabase || !id) {
+      return;
+    }
+
+    const previous = dbWeeklyGoals;
+    setDbWeeklyGoals((current) => current.filter((goal) => goal.id !== id));
+
+    const { error } = await supabase.from("weekly_goals").delete().eq("id", id);
+
+    if (error) {
+      setDbWeeklyGoals(previous);
+      setGoalMessage(error.message);
+      return;
+    }
+
+    setGoalMessage("Meta removida.");
+  }
+
   return (
     <main className="min-h-screen bg-[#f6f8fb] text-slate-950">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
@@ -397,7 +806,7 @@ export default function Home() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <StatusPill label="Supabase" done={Boolean(supabase)} />
                 <StatusPill label="Auth" done={Boolean(user)} />
-                <StatusPill label="CRUD techs" done={Boolean(user)} />
+                <StatusPill label="CRUD principal" done={Boolean(user)} />
               </div>
             </div>
           </article>
@@ -674,10 +1083,91 @@ export default function Home() {
           </Panel>
 
           <Panel title="Cursos" icon={BookOpen}>
+            {user ? (
+              <form
+                onSubmit={handleAddCourse}
+                className="mb-4 rounded-md border border-slate-200 bg-slate-50 p-3"
+              >
+                <div className="grid gap-3">
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-slate-500">
+                      Curso
+                    </span>
+                    <input
+                      value={courseTitle}
+                      onChange={(event) => setCourseTitle(event.target.value)}
+                      className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                      placeholder="Ex: Next.js completo"
+                    />
+                  </label>
+                  <div className="grid gap-3 sm:grid-cols-[1fr_140px_96px]">
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium text-slate-500">
+                        Plataforma
+                      </span>
+                      <input
+                        value={courseProvider}
+                        onChange={(event) =>
+                          setCourseProvider(event.target.value)
+                        }
+                        className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                        placeholder="Ex: Alura"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium text-slate-500">
+                        Status
+                      </span>
+                      <select
+                        value={courseStatus}
+                        onChange={(event) => setCourseStatus(event.target.value)}
+                        className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                      >
+                        <option>Em andamento</option>
+                        <option>Concluido</option>
+                        <option>Pausado</option>
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium text-slate-500">
+                        Progresso
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={courseProgress}
+                        onChange={(event) =>
+                          setCourseProgress(Number(event.target.value))
+                        }
+                        className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                      />
+                    </label>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isCourseLoading}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Plus size={16} aria-hidden="true" />
+                    Adicionar curso
+                  </button>
+                </div>
+                {courseMessage ? (
+                  <p className="mt-3 text-sm text-slate-500">
+                    {courseMessage}
+                  </p>
+                ) : null}
+              </form>
+            ) : (
+              <p className="mb-4 rounded-md bg-slate-50 p-3 text-sm text-slate-500">
+                Faca login para salvar cursos no Supabase.
+              </p>
+            )}
             <div className="space-y-3">
-              {courses.map((course) => (
+              {displayedCourses.map((course) => (
                 <div
-                  key={course.title}
+                  key={course.id ?? course.title}
                   className="rounded-md border border-slate-200 p-3"
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -686,7 +1176,7 @@ export default function Home() {
                         {course.title}
                       </h3>
                       <p className="text-sm text-slate-500">
-                        {course.provider}
+                        {course.provider ?? "Sem plataforma"}
                       </p>
                     </div>
                     <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
@@ -694,29 +1184,144 @@ export default function Home() {
                     </span>
                   </div>
                   <ProgressBar value={course.progress} className="mt-3" />
+                  {user && course.id ? (
+                    <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_140px_auto]">
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-medium text-slate-500">
+                          Progresso
+                        </span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={course.progress}
+                          onChange={(event) =>
+                            handleUpdateCourse(course.id, {
+                              progress: Number(event.target.value),
+                            })
+                          }
+                          className="w-full accent-slate-950"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-medium text-slate-500">
+                          Status
+                        </span>
+                        <select
+                          value={course.status}
+                          onChange={(event) =>
+                            handleUpdateCourse(course.id, {
+                              status: event.target.value,
+                            })
+                          }
+                          className="h-9 w-full rounded-md border border-slate-200 px-2 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                        >
+                          <option>Em andamento</option>
+                          <option>Concluido</option>
+                          <option>Pausado</option>
+                        </select>
+                      </label>
+                      <button
+                        onClick={() => handleDeleteCourse(course.id)}
+                        className="flex h-9 w-9 self-end items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:bg-rose-50 hover:text-rose-700"
+                        title="Remover curso"
+                      >
+                        <Trash2 size={16} aria-hidden="true" />
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
           </Panel>
 
           <Panel title="Metas semanais" icon={Target}>
+            {user ? (
+              <form
+                onSubmit={handleAddGoal}
+                className="mb-4 rounded-md border border-slate-200 bg-slate-50 p-3"
+              >
+                <div className="grid gap-3">
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-slate-500">
+                      Meta
+                    </span>
+                    <input
+                      value={goalTitle}
+                      onChange={(event) => setGoalTitle(event.target.value)}
+                      className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                      placeholder="Ex: estudar 5 horas"
+                    />
+                  </label>
+                  <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium text-slate-500">
+                        Area
+                      </span>
+                      <input
+                        value={goalArea}
+                        onChange={(event) => setGoalArea(event.target.value)}
+                        className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                        placeholder="Ex: GitHub"
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      disabled={isGoalLoading}
+                      className="inline-flex h-10 self-end items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Plus size={16} aria-hidden="true" />
+                      Adicionar
+                    </button>
+                  </div>
+                </div>
+                {goalMessage ? (
+                  <p className="mt-3 text-sm text-slate-500">{goalMessage}</p>
+                ) : null}
+              </form>
+            ) : (
+              <p className="mb-4 rounded-md bg-slate-50 p-3 text-sm text-slate-500">
+                Faca login para salvar metas no Supabase.
+              </p>
+            )}
             <div className="space-y-3">
-              {weeklyGoals.map((goal) => (
+              {displayedWeeklyGoals.map((goal) => (
                 <label
-                  key={goal.title}
+                  key={goal.id ?? goal.title}
                   className="flex cursor-pointer items-start gap-3 rounded-md border border-slate-200 p-3 transition hover:bg-slate-50"
                 >
                   <input
                     type="checkbox"
-                    defaultChecked={goal.done}
+                    checked={goal.done}
+                    onChange={(event) =>
+                      user && goal.id
+                        ? handleToggleGoal(goal.id, event.target.checked)
+                        : undefined
+                    }
+                    readOnly={!user || !goal.id}
                     className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950"
                   />
-                  <span>
+                  <span className="min-w-0 flex-1">
                     <span className="block font-medium text-slate-950">
                       {goal.title}
                     </span>
-                    <span className="text-sm text-slate-500">{goal.area}</span>
+                    <span className="text-sm text-slate-500">
+                      {goal.area ?? "Sem area"}
+                    </span>
                   </span>
+                  {user && goal.id ? (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        handleDeleteGoal(goal.id);
+                      }}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:bg-rose-50 hover:text-rose-700"
+                      title="Remover meta"
+                    >
+                      <Trash2 size={15} aria-hidden="true" />
+                    </button>
+                  ) : null}
                 </label>
               ))}
             </div>
@@ -733,17 +1338,84 @@ export default function Home() {
                 CRUD, API, deploy e portfolio em um so lugar.
               </p>
             </div>
-            <button
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-700 transition hover:bg-slate-50"
-              title="Adicionar projeto"
-            >
-              <Plus size={17} aria-hidden="true" />
-            </button>
           </div>
+          {user ? (
+            <form
+              onSubmit={handleAddProject}
+              className="mb-5 rounded-md border border-slate-200 bg-slate-50 p-3"
+            >
+              <div className="grid gap-3 lg:grid-cols-[1fr_1.4fr_160px_1fr_auto]">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-slate-500">
+                    Projeto
+                  </span>
+                  <input
+                    value={projectName}
+                    onChange={(event) => setProjectName(event.target.value)}
+                    className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                    placeholder="Ex: DevTrack"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-slate-500">
+                    Descricao
+                  </span>
+                  <input
+                    value={projectDescription}
+                    onChange={(event) =>
+                      setProjectDescription(event.target.value)
+                    }
+                    className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                    placeholder="Resumo curto do projeto"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-slate-500">
+                    Status
+                  </span>
+                  <select
+                    value={projectStatus}
+                    onChange={(event) => setProjectStatus(event.target.value)}
+                    className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                  >
+                    <option>Em construcao</option>
+                    <option>Publicado</option>
+                    <option>Pausado</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-slate-500">
+                    Stack
+                  </span>
+                  <input
+                    value={projectStack}
+                    onChange={(event) => setProjectStack(event.target.value)}
+                    className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                    placeholder="Next.js, Supabase"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={isProjectLoading}
+                  className="inline-flex h-10 self-end items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Plus size={16} aria-hidden="true" />
+                  Adicionar
+                </button>
+              </div>
+              {projectMessage ? (
+                <p className="mt-3 text-sm text-slate-500">{projectMessage}</p>
+              ) : null}
+            </form>
+          ) : (
+            <p className="mb-5 rounded-md bg-slate-50 p-3 text-sm text-slate-500">
+              Faca login para salvar projetos no Supabase.
+            </p>
+          )}
           <div className="grid gap-4 md:grid-cols-3">
-            {projects.map((project) => (
+            {displayedProjects.map((project) => (
               <article
-                key={project.name}
+                key={project.id ?? project.name}
                 className="rounded-lg border border-slate-200 p-4"
               >
                 <div className="flex items-start justify-between gap-3">
@@ -752,7 +1424,7 @@ export default function Home() {
                       {project.name}
                     </h3>
                     <p className="mt-1 text-sm text-slate-500">
-                      {project.description}
+                      {project.description ?? "Sem descricao"}
                     </p>
                   </div>
                   <span
@@ -776,6 +1448,35 @@ export default function Home() {
                     </span>
                   ))}
                 </div>
+                {user && project.id ? (
+                  <div className="mt-4 flex items-end gap-3">
+                    <label className="block flex-1">
+                      <span className="mb-1 block text-xs font-medium text-slate-500">
+                        Status
+                      </span>
+                      <select
+                        value={project.status}
+                        onChange={(event) =>
+                          handleUpdateProject(project.id, {
+                            status: event.target.value,
+                          })
+                        }
+                        className="h-9 w-full rounded-md border border-slate-200 px-2 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                      >
+                        <option>Em construcao</option>
+                        <option>Publicado</option>
+                        <option>Pausado</option>
+                      </select>
+                    </label>
+                    <button
+                      onClick={() => handleDeleteProject(project.id)}
+                      className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:bg-rose-50 hover:text-rose-700"
+                      title="Remover projeto"
+                    >
+                      <Trash2 size={16} aria-hidden="true" />
+                    </button>
+                  </div>
+                ) : null}
               </article>
             ))}
           </div>
@@ -933,6 +1634,13 @@ function GithubMetric({ label, value }: { label: string; value: number }) {
       <span className="text-sm text-slate-500">{label}</span>
     </div>
   );
+}
+
+function parseStack(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function Panel({
