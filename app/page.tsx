@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import {
   Area,
@@ -27,54 +27,49 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import {
+  AuthPanel,
+  GithubMetric,
+  Panel,
+  ProgressBar,
+  ProgressRow,
+  StatusPill,
+} from "@/components/dashboard-ui";
+import {
   courses,
-  evolution,
   githubStats,
   projects,
   technologies,
   weeklyGoals,
 } from "@/lib/dashboard-data";
+import {
+  createCourse,
+  createProject,
+  createTechnology,
+  createWeeklyGoal,
+  deleteCourse,
+  deleteProject,
+  deleteTechnology,
+  deleteWeeklyGoal,
+  listCourses,
+  listProjects,
+  listTechnologies,
+  listWeeklyGoals,
+  updateCourse,
+  updateProject,
+  updateTechnology,
+  updateWeeklyGoal,
+} from "@/lib/dashboard-service";
+import type {
+  Course,
+  GithubApiResponse,
+  GithubDashboardStats,
+  Project,
+  Technology,
+  WeeklyGoal,
+} from "@/lib/dashboard-types";
+import { buildEvolutionData } from "@/lib/evolution";
+import { parseStack } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
-
-type GithubDashboardStats = typeof githubStats;
-
-type GithubApiResponse = GithubDashboardStats & {
-  displayName: string;
-  profileUrl: string;
-  syncedAt: string;
-  username: string;
-};
-
-type Technology = {
-  id?: string;
-  name: string;
-  progress: number;
-  hours: number;
-  color: string;
-};
-
-type Course = {
-  id?: string;
-  title: string;
-  provider: string | null;
-  status: string;
-  progress: number;
-};
-
-type Project = {
-  id?: string;
-  name: string;
-  description: string | null;
-  status: string;
-  stack: string[];
-};
-
-type WeeklyGoal = {
-  id?: string;
-  title: string;
-  area: string | null;
-  done: boolean;
-};
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
@@ -125,6 +120,28 @@ export default function Home() {
   const displayedCourses: Course[] = user ? dbCourses : courses;
   const displayedProjects: Project[] = user ? dbProjects : projects;
   const displayedWeeklyGoals: WeeklyGoal[] = user ? dbWeeklyGoals : weeklyGoals;
+  const evolutionData = useMemo(
+    () =>
+      buildEvolutionData({
+        courses: displayedCourses,
+        github: githubData,
+        goals: displayedWeeklyGoals,
+        projects: displayedProjects,
+        technologies: displayedTechnologies,
+      }),
+    [
+      displayedCourses,
+      displayedProjects,
+      displayedTechnologies,
+      displayedWeeklyGoals,
+      githubData,
+    ],
+  );
+  const currentEvolutionScore =
+    evolutionData[evolutionData.length - 1]?.score ?? 0;
+  const previousEvolutionScore =
+    evolutionData[evolutionData.length - 2]?.score ?? currentEvolutionScore;
+  const evolutionDelta = currentEvolutionScore - previousEvolutionScore;
 
   const stats = [
     {
@@ -186,119 +203,79 @@ export default function Home() {
   }, [user]);
 
   async function loadTechnologies(userId: string) {
-    if (!supabase) {
-      return;
-    }
-
     setIsTechLoading(true);
     setTechMessage("Carregando tecnologias...");
 
-    const { data, error } = await supabase
-      .from("technologies")
-      .select("id, name, progress, hours, color")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
-
-    setIsTechLoading(false);
-
-    if (error) {
-      setTechMessage(error.message);
-      return;
+    try {
+      const data = await listTechnologies(userId);
+      setDbTechnologies(data);
+      setTechMessage(
+        data.length
+          ? "Tecnologias carregadas do Supabase."
+          : "Nenhuma tecnologia cadastrada ainda.",
+      );
+    } catch (error) {
+      setTechMessage(error instanceof Error ? error.message : "Erro ao carregar.");
+    } finally {
+      setIsTechLoading(false);
     }
-
-    setDbTechnologies(data ?? []);
-    setTechMessage(
-      data?.length
-        ? "Tecnologias carregadas do Supabase."
-        : "Nenhuma tecnologia cadastrada ainda.",
-    );
   }
 
   async function loadWeeklyGoals(userId: string) {
-    if (!supabase) {
-      return;
-    }
-
     setIsGoalLoading(true);
     setGoalMessage("Carregando metas...");
 
-    const { data, error } = await supabase
-      .from("weekly_goals")
-      .select("id, title, area, done")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
-
-    setIsGoalLoading(false);
-
-    if (error) {
-      setGoalMessage(error.message);
-      return;
+    try {
+      const data = await listWeeklyGoals(userId);
+      setDbWeeklyGoals(data);
+      setGoalMessage(
+        data.length
+          ? "Metas carregadas do Supabase."
+          : "Nenhuma meta cadastrada ainda.",
+      );
+    } catch (error) {
+      setGoalMessage(error instanceof Error ? error.message : "Erro ao carregar.");
+    } finally {
+      setIsGoalLoading(false);
     }
-
-    setDbWeeklyGoals(data ?? []);
-    setGoalMessage(
-      data?.length
-        ? "Metas carregadas do Supabase."
-        : "Nenhuma meta cadastrada ainda.",
-    );
   }
 
   async function loadProjects(userId: string) {
-    if (!supabase) {
-      return;
-    }
-
     setIsProjectLoading(true);
     setProjectMessage("Carregando projetos...");
 
-    const { data, error } = await supabase
-      .from("projects")
-      .select("id, name, description, status, stack")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
-
-    setIsProjectLoading(false);
-
-    if (error) {
-      setProjectMessage(error.message);
-      return;
+    try {
+      const data = await listProjects(userId);
+      setDbProjects(data);
+      setProjectMessage(
+        data.length
+          ? "Projetos carregados do Supabase."
+          : "Nenhum projeto cadastrado ainda.",
+      );
+    } catch (error) {
+      setProjectMessage(error instanceof Error ? error.message : "Erro ao carregar.");
+    } finally {
+      setIsProjectLoading(false);
     }
-
-    setDbProjects(data ?? []);
-    setProjectMessage(
-      data?.length
-        ? "Projetos carregados do Supabase."
-        : "Nenhum projeto cadastrado ainda.",
-    );
   }
 
   async function loadCourses(userId: string) {
-    if (!supabase) {
-      return;
-    }
-
     setIsCourseLoading(true);
     setCourseMessage("Carregando cursos...");
 
-    const { data, error } = await supabase
-      .from("courses")
-      .select("id, title, provider, status, progress")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
-
-    setIsCourseLoading(false);
-
-    if (error) {
-      setCourseMessage(error.message);
-      return;
+    try {
+      const data = await listCourses(userId);
+      setDbCourses(data);
+      setCourseMessage(
+        data.length
+          ? "Cursos carregados do Supabase."
+          : "Nenhum curso cadastrado ainda.",
+      );
+    } catch (error) {
+      setCourseMessage(error instanceof Error ? error.message : "Erro ao carregar.");
+    } finally {
+      setIsCourseLoading(false);
     }
-
-    setDbCourses(data ?? []);
-    setCourseMessage(
-      data?.length
-        ? "Cursos carregados do Supabase."
-        : "Nenhum curso cadastrado ainda.",
-    );
   }
 
   async function handleAuth(event: FormEvent<HTMLFormElement>) {
@@ -406,30 +383,24 @@ export default function Home() {
     setIsTechLoading(true);
     setTechMessage("Salvando tecnologia...");
 
-    const { data, error } = await supabase
-      .from("technologies")
-      .insert({
-        user_id: user.id,
+    try {
+      const data = await createTechnology(user.id, {
         name,
         progress: techProgress,
         hours: techHours,
         color: "#0f766e",
-      })
-      .select("id, name, progress, hours, color")
-      .single();
+      });
 
-    setIsTechLoading(false);
-
-    if (error) {
-      setTechMessage(error.message);
-      return;
+      setDbTechnologies((current) => [data, ...current]);
+      setTechName("");
+      setTechProgress(50);
+      setTechHours(1);
+      setTechMessage(`${data.name} cadastrada com sucesso.`);
+    } catch (error) {
+      setTechMessage(error instanceof Error ? error.message : "Erro ao salvar.");
+    } finally {
+      setIsTechLoading(false);
     }
-
-    setDbTechnologies((current) => [data, ...current]);
-    setTechName("");
-    setTechProgress(50);
-    setTechHours(1);
-    setTechMessage(`${data.name} cadastrada com sucesso.`);
   }
 
   async function handleUpdateTechnology(
@@ -444,17 +415,15 @@ export default function Home() {
       current.map((tech) => (tech.id === id ? { ...tech, ...updates } : tech)),
     );
 
-    const { error } = await supabase.from("technologies").update(updates).eq("id", id);
-
-    if (error) {
-      setTechMessage(error.message);
+    try {
+      await updateTechnology(id, updates);
+      setTechMessage("Tecnologia atualizada.");
+    } catch (error) {
+      setTechMessage(error instanceof Error ? error.message : "Erro ao atualizar.");
       if (user) {
         loadTechnologies(user.id);
       }
-      return;
     }
-
-    setTechMessage("Tecnologia atualizada.");
   }
 
   async function handleDeleteTechnology(id: string | undefined) {
@@ -465,15 +434,13 @@ export default function Home() {
     const previous = dbTechnologies;
     setDbTechnologies((current) => current.filter((tech) => tech.id !== id));
 
-    const { error } = await supabase.from("technologies").delete().eq("id", id);
-
-    if (error) {
+    try {
+      await deleteTechnology(id);
+      setTechMessage("Tecnologia removida.");
+    } catch (error) {
       setDbTechnologies(previous);
-      setTechMessage(error.message);
-      return;
+      setTechMessage(error instanceof Error ? error.message : "Erro ao remover.");
     }
-
-    setTechMessage("Tecnologia removida.");
   }
 
   async function handleAddCourse(event: FormEvent<HTMLFormElement>) {
@@ -494,31 +461,25 @@ export default function Home() {
     setIsCourseLoading(true);
     setCourseMessage("Salvando curso...");
 
-    const { data, error } = await supabase
-      .from("courses")
-      .insert({
-        user_id: user.id,
+    try {
+      const data = await createCourse(user.id, {
         title,
         provider: courseProvider.trim() || null,
         status: courseStatus,
         progress: courseProgress,
-      })
-      .select("id, title, provider, status, progress")
-      .single();
+      });
 
-    setIsCourseLoading(false);
-
-    if (error) {
-      setCourseMessage(error.message);
-      return;
+      setDbCourses((current) => [data, ...current]);
+      setCourseTitle("");
+      setCourseProvider("");
+      setCourseStatus("Em andamento");
+      setCourseProgress(50);
+      setCourseMessage(`${data.title} cadastrado com sucesso.`);
+    } catch (error) {
+      setCourseMessage(error instanceof Error ? error.message : "Erro ao salvar.");
+    } finally {
+      setIsCourseLoading(false);
     }
-
-    setDbCourses((current) => [data, ...current]);
-    setCourseTitle("");
-    setCourseProvider("");
-    setCourseStatus("Em andamento");
-    setCourseProgress(50);
-    setCourseMessage(`${data.title} cadastrado com sucesso.`);
   }
 
   async function handleUpdateCourse(
@@ -535,17 +496,15 @@ export default function Home() {
       ),
     );
 
-    const { error } = await supabase.from("courses").update(updates).eq("id", id);
-
-    if (error) {
-      setCourseMessage(error.message);
+    try {
+      await updateCourse(id, updates);
+      setCourseMessage("Curso atualizado.");
+    } catch (error) {
+      setCourseMessage(error instanceof Error ? error.message : "Erro ao atualizar.");
       if (user) {
         loadCourses(user.id);
       }
-      return;
     }
-
-    setCourseMessage("Curso atualizado.");
   }
 
   async function handleDeleteCourse(id: string | undefined) {
@@ -556,15 +515,13 @@ export default function Home() {
     const previous = dbCourses;
     setDbCourses((current) => current.filter((course) => course.id !== id));
 
-    const { error } = await supabase.from("courses").delete().eq("id", id);
-
-    if (error) {
+    try {
+      await deleteCourse(id);
+      setCourseMessage("Curso removido.");
+    } catch (error) {
       setDbCourses(previous);
-      setCourseMessage(error.message);
-      return;
+      setCourseMessage(error instanceof Error ? error.message : "Erro ao remover.");
     }
-
-    setCourseMessage("Curso removido.");
   }
 
   async function handleAddProject(event: FormEvent<HTMLFormElement>) {
@@ -585,31 +542,25 @@ export default function Home() {
     setIsProjectLoading(true);
     setProjectMessage("Salvando projeto...");
 
-    const { data, error } = await supabase
-      .from("projects")
-      .insert({
-        user_id: user.id,
+    try {
+      const data = await createProject(user.id, {
         name,
         description: projectDescription.trim() || null,
         status: projectStatus,
         stack: parseStack(projectStack),
-      })
-      .select("id, name, description, status, stack")
-      .single();
+      });
 
-    setIsProjectLoading(false);
-
-    if (error) {
-      setProjectMessage(error.message);
-      return;
+      setDbProjects((current) => [data, ...current]);
+      setProjectName("");
+      setProjectDescription("");
+      setProjectStatus("Em construcao");
+      setProjectStack("");
+      setProjectMessage(`${data.name} cadastrado com sucesso.`);
+    } catch (error) {
+      setProjectMessage(error instanceof Error ? error.message : "Erro ao salvar.");
+    } finally {
+      setIsProjectLoading(false);
     }
-
-    setDbProjects((current) => [data, ...current]);
-    setProjectName("");
-    setProjectDescription("");
-    setProjectStatus("Em construcao");
-    setProjectStack("");
-    setProjectMessage(`${data.name} cadastrado com sucesso.`);
   }
 
   async function handleUpdateProject(
@@ -626,17 +577,15 @@ export default function Home() {
       ),
     );
 
-    const { error } = await supabase.from("projects").update(updates).eq("id", id);
-
-    if (error) {
-      setProjectMessage(error.message);
+    try {
+      await updateProject(id, updates);
+      setProjectMessage("Projeto atualizado.");
+    } catch (error) {
+      setProjectMessage(error instanceof Error ? error.message : "Erro ao atualizar.");
       if (user) {
         loadProjects(user.id);
       }
-      return;
     }
-
-    setProjectMessage("Projeto atualizado.");
   }
 
   async function handleDeleteProject(id: string | undefined) {
@@ -647,15 +596,13 @@ export default function Home() {
     const previous = dbProjects;
     setDbProjects((current) => current.filter((project) => project.id !== id));
 
-    const { error } = await supabase.from("projects").delete().eq("id", id);
-
-    if (error) {
+    try {
+      await deleteProject(id);
+      setProjectMessage("Projeto removido.");
+    } catch (error) {
       setDbProjects(previous);
-      setProjectMessage(error.message);
-      return;
+      setProjectMessage(error instanceof Error ? error.message : "Erro ao remover.");
     }
-
-    setProjectMessage("Projeto removido.");
   }
 
   async function handleAddGoal(event: FormEvent<HTMLFormElement>) {
@@ -676,28 +623,22 @@ export default function Home() {
     setIsGoalLoading(true);
     setGoalMessage("Salvando meta...");
 
-    const { data, error } = await supabase
-      .from("weekly_goals")
-      .insert({
-        user_id: user.id,
+    try {
+      const data = await createWeeklyGoal(user.id, {
         title,
         area: goalArea.trim() || null,
         done: false,
-      })
-      .select("id, title, area, done")
-      .single();
+      });
 
-    setIsGoalLoading(false);
-
-    if (error) {
-      setGoalMessage(error.message);
-      return;
+      setDbWeeklyGoals((current) => [data, ...current]);
+      setGoalTitle("");
+      setGoalArea("");
+      setGoalMessage(`${data.title} cadastrada com sucesso.`);
+    } catch (error) {
+      setGoalMessage(error instanceof Error ? error.message : "Erro ao salvar.");
+    } finally {
+      setIsGoalLoading(false);
     }
-
-    setDbWeeklyGoals((current) => [data, ...current]);
-    setGoalTitle("");
-    setGoalArea("");
-    setGoalMessage(`${data.title} cadastrada com sucesso.`);
   }
 
   async function handleToggleGoal(id: string | undefined, done: boolean) {
@@ -709,20 +650,15 @@ export default function Home() {
       current.map((goal) => (goal.id === id ? { ...goal, done } : goal)),
     );
 
-    const { error } = await supabase
-      .from("weekly_goals")
-      .update({ done })
-      .eq("id", id);
-
-    if (error) {
-      setGoalMessage(error.message);
+    try {
+      await updateWeeklyGoal(id, { done });
+      setGoalMessage(done ? "Meta concluida." : "Meta reaberta.");
+    } catch (error) {
+      setGoalMessage(error instanceof Error ? error.message : "Erro ao atualizar.");
       if (user) {
         loadWeeklyGoals(user.id);
       }
-      return;
     }
-
-    setGoalMessage(done ? "Meta concluida." : "Meta reaberta.");
   }
 
   async function handleDeleteGoal(id: string | undefined) {
@@ -733,15 +669,13 @@ export default function Home() {
     const previous = dbWeeklyGoals;
     setDbWeeklyGoals((current) => current.filter((goal) => goal.id !== id));
 
-    const { error } = await supabase.from("weekly_goals").delete().eq("id", id);
-
-    if (error) {
+    try {
+      await deleteWeeklyGoal(id);
+      setGoalMessage("Meta removida.");
+    } catch (error) {
       setDbWeeklyGoals(previous);
-      setGoalMessage(error.message);
-      return;
+      setGoalMessage(error instanceof Error ? error.message : "Erro ao remover.");
     }
-
-    setGoalMessage("Meta removida.");
   }
 
   return (
@@ -849,17 +783,20 @@ export default function Home() {
                   Grafico de evolucao
                 </h2>
                 <p className="text-sm text-slate-500">
-                  Pontuacao semanal combinando estudo, pratica e entregas.
+                  Score calculado a partir de estudos, metas, projetos e GitHub.
                 </p>
               </div>
               <span className="inline-flex w-fit items-center gap-2 rounded-md bg-emerald-50 px-2.5 py-1 text-sm font-medium text-emerald-700">
                 <Flame size={15} aria-hidden="true" />
-                +18% no ciclo
+                {currentEvolutionScore} pts
+                <span className="text-emerald-500">-</span>
+                {evolutionDelta >= 0 ? "+" : ""}
+                {evolutionDelta} pts no ciclo
               </span>
             </div>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={evolution} margin={{ left: -20, right: 8 }}>
+                <AreaChart data={evolutionData} margin={{ left: -20, right: 8 }}>
                   <defs>
                     <linearGradient id="score" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#0f766e" stopOpacity={0.28} />
@@ -1483,225 +1420,5 @@ export default function Home() {
         </section>
       </div>
     </main>
-  );
-}
-
-function AuthPanel({
-  authMessage,
-  authMode,
-  email,
-  isAuthLoading,
-  password,
-  user,
-  onAuth,
-  onEmailChange,
-  onModeChange,
-  onPasswordChange,
-  onSignOut,
-}: {
-  authMessage: string;
-  authMode: "signin" | "signup";
-  email: string;
-  isAuthLoading: boolean;
-  password: string;
-  user: User | null;
-  onAuth: (event: FormEvent<HTMLFormElement>) => void;
-  onEmailChange: (email: string) => void;
-  onModeChange: (mode: "signin" | "signup") => void;
-  onPasswordChange: (password: string) => void;
-  onSignOut: () => void;
-}) {
-  return (
-    <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold text-slate-950">Autenticacao</h2>
-        <p className="text-sm text-slate-500">
-          Login e cadastro por e-mail usando Supabase Auth.
-        </p>
-      </div>
-
-      {user ? (
-        <div className="space-y-4">
-          <div className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
-            Logado como <strong>{user.email}</strong>
-          </div>
-          <button
-            onClick={onSignOut}
-            className="inline-flex h-10 items-center rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-          >
-            Sair da conta
-          </button>
-        </div>
-      ) : (
-        <form onSubmit={onAuth} className="space-y-3">
-          <div className="grid grid-cols-2 rounded-md bg-slate-100 p-1">
-            <button
-              type="button"
-              onClick={() => onModeChange("signin")}
-              className={clsx(
-                "h-9 rounded px-3 text-sm font-medium transition",
-                authMode === "signin"
-                  ? "bg-white text-slate-950 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700",
-              )}
-            >
-              Entrar
-            </button>
-            <button
-              type="button"
-              onClick={() => onModeChange("signup")}
-              className={clsx(
-                "h-9 rounded px-3 text-sm font-medium transition",
-                authMode === "signup"
-                  ? "bg-white text-slate-950 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700",
-              )}
-            >
-              Criar conta
-            </button>
-          </div>
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">
-              E-mail
-            </span>
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => onEmailChange(event.target.value)}
-              required
-              className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-              placeholder="voce@email.com"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">
-              Senha
-            </span>
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => onPasswordChange(event.target.value)}
-              required
-              minLength={6}
-              className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-              placeholder="minimo 6 caracteres"
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={isAuthLoading}
-            className="inline-flex h-10 w-full items-center justify-center rounded-md bg-slate-950 px-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isAuthLoading
-              ? "Conectando..."
-              : authMode === "signin"
-                ? "Entrar"
-                : "Criar conta"}
-          </button>
-        </form>
-      )}
-
-      {authMessage ? (
-        <p className="mt-3 rounded-md bg-slate-50 p-3 text-sm text-slate-600">
-          {authMessage}
-        </p>
-      ) : null}
-    </article>
-  );
-}
-
-function StatusPill({ label, done }: { label: string; done: boolean }) {
-  return (
-    <div
-      className={clsx(
-        "rounded-md border p-3 text-sm font-medium",
-        done
-          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-          : "border-slate-200 bg-slate-50 text-slate-500",
-      )}
-    >
-      {label}: {done ? "ok" : "pendente"}
-    </div>
-  );
-}
-
-function GithubMetric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-md bg-slate-50 p-3 text-center">
-      <strong className="block text-2xl font-semibold text-slate-950">
-        {value}
-      </strong>
-      <span className="text-sm text-slate-500">{label}</span>
-    </div>
-  );
-}
-
-function parseStack(value: string) {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function Panel({
-  title,
-  icon: Icon,
-  children,
-}: {
-  title: string;
-  icon: typeof Code2;
-  children: React.ReactNode;
-}) {
-  return (
-    <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-5 flex items-center gap-2">
-        <span className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-100 text-slate-700">
-          <Icon size={18} aria-hidden="true" />
-        </span>
-        <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
-      </div>
-      {children}
-    </article>
-  );
-}
-
-function ProgressRow({
-  label,
-  value,
-  meta,
-  color,
-}: {
-  label: string;
-  value: number;
-  meta: string;
-  color: string;
-}) {
-  return (
-    <div>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <span className="font-medium text-slate-950">{label}</span>
-        <span className="text-sm text-slate-500">{meta}</span>
-      </div>
-      <ProgressBar value={value} color={color} />
-    </div>
-  );
-}
-
-function ProgressBar({
-  value,
-  color = "#0f766e",
-  className,
-}: {
-  value: number;
-  color?: string;
-  className?: string;
-}) {
-  return (
-    <div className={clsx("h-2 rounded-full bg-slate-100", className)}>
-      <div
-        className="h-full rounded-full"
-        style={{ width: `${value}%`, backgroundColor: color }}
-      />
-    </div>
   );
 }
