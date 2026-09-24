@@ -23,6 +23,7 @@ import {
   Plus,
   Rocket,
   Target,
+  Trash2,
 } from "lucide-react";
 import { clsx } from "clsx";
 import {
@@ -35,36 +36,22 @@ import {
 } from "@/lib/dashboard-data";
 import { supabase } from "@/lib/supabase";
 
-const stats = [
-  {
-    label: "Tecnologias",
-    value: technologies.length,
-    detail: "4 em progresso",
-    icon: Code2,
-    tone: "bg-emerald-100 text-emerald-700",
-  },
-  {
-    label: "Cursos ativos",
-    value: courses.filter((course) => course.status !== "Concluido").length,
-    detail: "2 quase finalizando",
-    icon: GraduationCap,
-    tone: "bg-sky-100 text-sky-700",
-  },
-  {
-    label: "Projetos",
-    value: projects.length,
-    detail: "1 pronto para deploy",
-    icon: Rocket,
-    tone: "bg-amber-100 text-amber-700",
-  },
-  {
-    label: "Commits no mes",
-    value: githubStats.commitsThisMonth,
-    detail: `${githubStats.currentStreak} dias de sequencia`,
-    icon: GitBranch,
-    tone: "bg-rose-100 text-rose-700",
-  },
-];
+type GithubDashboardStats = typeof githubStats;
+
+type GithubApiResponse = GithubDashboardStats & {
+  displayName: string;
+  profileUrl: string;
+  syncedAt: string;
+  username: string;
+};
+
+type Technology = {
+  id?: string;
+  name: string;
+  progress: number;
+  hours: number;
+  color: string;
+};
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
@@ -73,6 +60,55 @@ export default function Home() {
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [authMessage, setAuthMessage] = useState("");
   const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [githubUsername, setGithubUsername] = useState("leolvgomes");
+  const [githubData, setGithubData] =
+    useState<GithubDashboardStats>(githubStats);
+  const [githubProfile, setGithubProfile] = useState<GithubApiResponse | null>(
+    null,
+  );
+  const [githubStatus, setGithubStatus] = useState(
+    "Pronto para sincronizar dados publicos.",
+  );
+  const [isGithubLoading, setIsGithubLoading] = useState(false);
+  const [dbTechnologies, setDbTechnologies] = useState<Technology[]>([]);
+  const [techName, setTechName] = useState("");
+  const [techProgress, setTechProgress] = useState(50);
+  const [techHours, setTechHours] = useState(1);
+  const [techMessage, setTechMessage] = useState("");
+  const [isTechLoading, setIsTechLoading] = useState(false);
+
+  const displayedTechnologies: Technology[] = user ? dbTechnologies : technologies;
+
+  const stats = [
+    {
+      label: "Tecnologias",
+      value: displayedTechnologies.length,
+      detail: user ? "salvas no Supabase" : "exemplos locais",
+      icon: Code2,
+      tone: "bg-emerald-100 text-emerald-700",
+    },
+    {
+      label: "Cursos ativos",
+      value: courses.filter((course) => course.status !== "Concluido").length,
+      detail: "2 quase finalizando",
+      icon: GraduationCap,
+      tone: "bg-sky-100 text-sky-700",
+    },
+    {
+      label: "Projetos",
+      value: projects.length,
+      detail: "1 pronto para deploy",
+      icon: Rocket,
+      tone: "bg-amber-100 text-amber-700",
+    },
+    {
+      label: "Commits no mes",
+      value: githubData.commitsThisMonth,
+      detail: `${githubData.currentStreak} dias de sequencia`,
+      icon: GitBranch,
+      tone: "bg-rose-100 text-rose-700",
+    },
+  ];
 
   useEffect(() => {
     if (!supabase) {
@@ -91,6 +127,41 @@ export default function Home() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      loadTechnologies(user.id);
+    }
+  }, [user]);
+
+  async function loadTechnologies(userId: string) {
+    if (!supabase) {
+      return;
+    }
+
+    setIsTechLoading(true);
+    setTechMessage("Carregando tecnologias...");
+
+    const { data, error } = await supabase
+      .from("technologies")
+      .select("id, name, progress, hours, color")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    setIsTechLoading(false);
+
+    if (error) {
+      setTechMessage(error.message);
+      return;
+    }
+
+    setDbTechnologies(data ?? []);
+    setTechMessage(
+      data?.length
+        ? "Tecnologias carregadas do Supabase."
+        : "Nenhuma tecnologia cadastrada ainda.",
+    );
+  }
 
   async function handleAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -129,7 +200,139 @@ export default function Home() {
     }
 
     await supabase.auth.signOut();
+    setDbTechnologies([]);
     setAuthMessage("Sessao encerrada.");
+  }
+
+  async function handleGithubSync() {
+    const username = githubUsername.trim();
+
+    if (!username) {
+      setGithubStatus("Informe um usuario do GitHub para sincronizar.");
+      return;
+    }
+
+    setIsGithubLoading(true);
+    setGithubStatus("Sincronizando com a GitHub API...");
+
+    try {
+      const response = await fetch(
+        `/api/github?username=${encodeURIComponent(username)}`,
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Erro ao sincronizar GitHub.");
+      }
+
+      setGithubData(data);
+      setGithubProfile(data);
+      setGithubUsername(data.username);
+      setGithubStatus(
+        `Sincronizado com ${data.displayName} em ${new Date(
+          data.syncedAt,
+        ).toLocaleTimeString("pt-BR", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}.`,
+      );
+    } catch (error) {
+      setGithubStatus(
+        error instanceof Error
+          ? error.message
+          : "Nao foi possivel sincronizar com o GitHub.",
+      );
+    } finally {
+      setIsGithubLoading(false);
+    }
+  }
+
+  async function handleAddTechnology(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!supabase || !user) {
+      setTechMessage("Faca login para cadastrar tecnologias.");
+      return;
+    }
+
+    const name = techName.trim();
+
+    if (!name) {
+      setTechMessage("Informe o nome da tecnologia.");
+      return;
+    }
+
+    setIsTechLoading(true);
+    setTechMessage("Salvando tecnologia...");
+
+    const { data, error } = await supabase
+      .from("technologies")
+      .insert({
+        user_id: user.id,
+        name,
+        progress: techProgress,
+        hours: techHours,
+        color: "#0f766e",
+      })
+      .select("id, name, progress, hours, color")
+      .single();
+
+    setIsTechLoading(false);
+
+    if (error) {
+      setTechMessage(error.message);
+      return;
+    }
+
+    setDbTechnologies((current) => [data, ...current]);
+    setTechName("");
+    setTechProgress(50);
+    setTechHours(1);
+    setTechMessage(`${data.name} cadastrada com sucesso.`);
+  }
+
+  async function handleUpdateTechnology(
+    id: string | undefined,
+    updates: Partial<Pick<Technology, "progress" | "hours">>,
+  ) {
+    if (!supabase || !id) {
+      return;
+    }
+
+    setDbTechnologies((current) =>
+      current.map((tech) => (tech.id === id ? { ...tech, ...updates } : tech)),
+    );
+
+    const { error } = await supabase.from("technologies").update(updates).eq("id", id);
+
+    if (error) {
+      setTechMessage(error.message);
+      if (user) {
+        loadTechnologies(user.id);
+      }
+      return;
+    }
+
+    setTechMessage("Tecnologia atualizada.");
+  }
+
+  async function handleDeleteTechnology(id: string | undefined) {
+    if (!supabase || !id) {
+      return;
+    }
+
+    const previous = dbTechnologies;
+    setDbTechnologies((current) => current.filter((tech) => tech.id !== id));
+
+    const { error } = await supabase.from("technologies").delete().eq("id", id);
+
+    if (error) {
+      setDbTechnologies(previous);
+      setTechMessage(error.message);
+      return;
+    }
+
+    setTechMessage("Tecnologia removida.");
   }
 
   return (
@@ -150,9 +353,13 @@ export default function Home() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+            <button
+              onClick={handleGithubSync}
+              disabled={isGithubLoading}
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
               <GitBranch size={16} aria-hidden="true" />
-              Sincronizar GitHub
+              {isGithubLoading ? "Sincronizando..." : "Sincronizar GitHub"}
             </button>
             <button className="inline-flex h-10 items-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-medium text-white transition hover:bg-slate-800">
               <Plus size={16} aria-hidden="true" />
@@ -190,7 +397,7 @@ export default function Home() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <StatusPill label="Supabase" done={Boolean(supabase)} />
                 <StatusPill label="Auth" done={Boolean(user)} />
-                <StatusPill label="CRUD" done={false} />
+                <StatusPill label="CRUD techs" done={Boolean(user)} />
               </div>
             </div>
           </article>
@@ -279,17 +486,46 @@ export default function Home() {
                 Atividade GitHub
               </h2>
               <p className="text-sm text-slate-500">
-                Resumo preparado para receber dados da GitHub API.
+                Dados publicos sincronizados pela API do GitHub.
               </p>
+              {githubProfile ? (
+                <a
+                  href={githubProfile.profileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-flex text-sm font-medium text-blue-700 hover:text-blue-800"
+                >
+                  @{githubProfile.username}
+                </a>
+              ) : null}
             </div>
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row">
+              <input
+                value={githubUsername}
+                onChange={(event) => setGithubUsername(event.target.value)}
+                className="h-10 min-w-0 flex-1 rounded-md border border-slate-200 px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                placeholder="usuario do GitHub"
+              />
+              <button
+                onClick={handleGithubSync}
+                disabled={isGithubLoading}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <GitBranch size={16} aria-hidden="true" />
+                Buscar
+              </button>
+            </div>
+            <p className="mb-4 rounded-md bg-slate-50 p-3 text-sm text-slate-600">
+              {githubStatus}
+            </p>
             <div className="grid grid-cols-3 gap-3">
-              <GithubMetric label="Repos" value={githubStats.repositories} />
-              <GithubMetric label="PRs" value={githubStats.pullRequests} />
-              <GithubMetric label="Issues" value={githubStats.issuesClosed} />
+              <GithubMetric label="Repos" value={githubData.repositories} />
+              <GithubMetric label="PRs" value={githubData.pullRequests} />
+              <GithubMetric label="Issues" value={githubData.issuesClosed} />
             </div>
             <div className="mt-5 h-48">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={githubStats.weeklyCommits}>
+                <BarChart data={githubData.weeklyCommits}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="day" tickLine={false} axisLine={false} />
                   <YAxis tickLine={false} axisLine={false} />
@@ -314,15 +550,125 @@ export default function Home() {
 
         <section className="grid gap-6 lg:grid-cols-3">
           <Panel title="Tecnologias aprendidas" icon={Code2}>
+            {user ? (
+              <form
+                onSubmit={handleAddTechnology}
+                className="mb-4 rounded-md border border-slate-200 bg-slate-50 p-3"
+              >
+                <div className="grid gap-3 sm:grid-cols-[1fr_96px_96px_auto]">
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-slate-500">
+                      Tecnologia
+                    </span>
+                    <input
+                      value={techName}
+                      onChange={(event) => setTechName(event.target.value)}
+                      className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                      placeholder="Ex: React"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-slate-500">
+                      Progresso
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={techProgress}
+                      onChange={(event) =>
+                        setTechProgress(Number(event.target.value))
+                      }
+                      className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-slate-500">
+                      Horas
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={techHours}
+                      onChange={(event) => setTechHours(Number(event.target.value))}
+                      className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={isTechLoading}
+                    className="inline-flex h-10 self-end items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Plus size={16} aria-hidden="true" />
+                    Adicionar
+                  </button>
+                </div>
+                {techMessage ? (
+                  <p className="mt-3 text-sm text-slate-500">{techMessage}</p>
+                ) : null}
+              </form>
+            ) : (
+              <p className="mb-4 rounded-md bg-slate-50 p-3 text-sm text-slate-500">
+                Faca login para salvar tecnologias no Supabase.
+              </p>
+            )}
             <div className="space-y-3">
-              {technologies.map((tech) => (
-                <ProgressRow
-                  key={tech.name}
-                  label={tech.name}
-                  value={tech.progress}
-                  meta={`${tech.hours}h praticadas`}
-                  color={tech.color}
-                />
+              {displayedTechnologies.map((tech) => (
+                <div
+                  key={tech.id ?? tech.name}
+                  className="rounded-md border border-slate-200 p-3"
+                >
+                  <ProgressRow
+                    label={tech.name}
+                    value={tech.progress}
+                    meta={`${tech.hours}h praticadas`}
+                    color={tech.color}
+                  />
+                  {user && tech.id ? (
+                    <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_96px_auto]">
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-medium text-slate-500">
+                          Progresso
+                        </span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={tech.progress}
+                          onChange={(event) =>
+                            handleUpdateTechnology(tech.id, {
+                              progress: Number(event.target.value),
+                            })
+                          }
+                          className="w-full accent-slate-950"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-medium text-slate-500">
+                          Horas
+                        </span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={tech.hours}
+                          onChange={(event) =>
+                            handleUpdateTechnology(tech.id, {
+                              hours: Number(event.target.value),
+                            })
+                          }
+                          className="h-9 w-full rounded-md border border-slate-200 px-2 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                        />
+                      </label>
+                      <button
+                        onClick={() => handleDeleteTechnology(tech.id)}
+                        className="flex h-9 w-9 self-end items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:bg-rose-50 hover:text-rose-700"
+                        title="Remover tecnologia"
+                      >
+                        <Trash2 size={16} aria-hidden="true" />
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               ))}
             </div>
           </Panel>

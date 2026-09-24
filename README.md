@@ -27,8 +27,11 @@ O arquivo `.env.local` deve conter:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_GITHUB_USERNAME=
 GITHUB_TOKEN=
 ```
+
+`GITHUB_TOKEN` e opcional, mas recomendado para aumentar o limite da GitHub API.
 
 ## Banco de dados
 
